@@ -11,6 +11,7 @@
 ## ✨ Temel Özellikler
 
 ### 👩‍🎓 Öğrenci Tarafı
+
 - Atama kodu + okul numarası ile giriş
 - İsim-soyisim otomatik doğrulama (manuel giriş yok)
 - Quiz’e tek seferlik katılım (attempt-based)
@@ -19,6 +20,7 @@
 - Sadece kendi sonucunu görme
 
 ### 👨‍🏫 Öğretmen Tarafı (Planlanan)
+
 - Soru havuzu (kazanım bazlı)
 - Quiz oluşturma ve atama
 - Canlı yarışma / ödev modu
@@ -38,6 +40,7 @@ Mentis, **KVKK / GDPR** uyumlu olacak şekilde tasarlanmıştır.
 - Kişisel veri minimizasyonu temel ilkedir
 
 Planlanan ek önlemler:
+
 - IP / User-Agent kontrolü
 - Tek sekme / tek cihaz kısıtı
 - Rate limiting
@@ -47,6 +50,7 @@ Planlanan ek önlemler:
 ## 🏗️ Mimari
 
 ### Backend
+
 - Node.js + TypeScript
 - Fastify
 - Prisma ORM
@@ -54,24 +58,32 @@ Planlanan ek önlemler:
 - WebSocket / Socket.IO (planlanan)
 
 ### Frontend
+
 - Next.js (App Router)
 - TypeScript
 - Tailwind CSS
 - Premium dark UI yaklaşımı
 
 ### Monorepo Yapısı
+
+```text
 mentis/
-├─ apps/
-│  ├─ api/          # Backend
-│  ├─ web-student/  # Öğrenci arayüzü
-│  └─ web-teacher/  # Öğretmen arayüzü (planlanan)
-└─ packages/
+├── apps/
+│   ├── api/            # Backend (Fastify + Prisma)
+│   ├── web-student/    # Öğrenci arayüzü (Next.js)
+│   └── web-teacher/    # Öğretmen arayüzü (planlanan)
+├── packages/           # Ortak paketler (ileride)
+├── docker/             # Docker & infra dosyaları
+├── pnpm-workspace.yaml
+├── package.json
+└── README.md
 
 ---
 
 ## 🚦 Proje Durumu (Şubat 2026)
 
 ### ✅ Tamamlananlar
+
 - Proje konsepti ve isimlendirme
 - Backend temel mimari
 - Prisma schema
@@ -83,6 +95,7 @@ mentis/
 - Health check endpoint
 
 ### 🟡 Devam Edenler
+
 - UI tema ve kontrast düzenlemeleri
 - Soru state yönetimi
 - Soru ilerleme akışı
@@ -92,6 +105,7 @@ mentis/
 ## 🗺️ Yol Haritası
 
 ### Phase 1 – MVP
+
 - [x] Student join flow
 - [x] Attempt bazlı quiz
 - [ ] Soru timer
@@ -100,17 +114,20 @@ mentis/
 - [ ] Tema standardizasyonu
 
 ### Phase 2 – Canlı Yarışma
+
 - [ ] WebSocket altyapısı
 - [ ] Gerçek zamanlı leaderboard
 - [ ] Öğretmen canlı kontrol paneli
 
 ### Phase 3 – Öğretmen Paneli
+
 - [ ] Quiz builder
 - [ ] Soru bankası
 - [ ] Kazanım etiketleme
 - [ ] Raporlama ekranları
 
 ### Phase 4 – Güvenlik & Ölçek
+
 - [ ] Anti-cheat mekanizmaları
 - [ ] Load test
 - [ ] Docker prod setup
@@ -123,6 +140,7 @@ mentis/
 Mentis, öğretmen ihtiyaçlarından doğmuş, **açık kaynaklı** bir eğitim teknolojisi projesidir.
 
 Vizyon:
+
 - Öğretmen odaklı
 - Okul gerçeklerine uygun
 - Veri güvenliğini önceleyen
@@ -132,13 +150,14 @@ Vizyon:
 
 ## 👨‍💻 Geliştirici
 
-**Akif Aydın**  
-Fen Bilimleri Öğretmeni & Geliştirici  
+**Akif Aydın**
+Fen Bilimleri Öğretmeni & Geliştirici
 Türkiye 🇹🇷
 
 ---
 
 ## 📜 Lisans
 
-Henüz belirlenmedi.  
+Henüz belirlenmedi.
 (MIT veya Apache 2.0 değerlendirme aşamasında)
+```
