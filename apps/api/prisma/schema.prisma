@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Teacher {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  classes   Class[]
+}
+
+model Class {
+  id          String       @id @default(cuid())
+  name        String
+  teacherId   String
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  students    Student[]
+  assignments Assignment[]
+  createdAt   DateTime     @default(now())
+
+  @@unique([teacherId, name])
+}
+
+model Student {
+  id        String    @id @default(cuid())
+  studentNo String
+  firstName String
+  lastName  String
+  classId   String
+  class     Class     @relation(fields: [classId], references: [id])
+  attempts  Attempt[]
+  createdAt DateTime  @default(now())
+
+  @@unique([classId, studentNo])
+  @@index([studentNo])
+}
+
+model Quiz {
+  id          String         @id @default(cuid())
+  title       String
+  createdAt   DateTime       @default(now())
+  questions   QuizQuestion[]
+  assignments Assignment[]
+}
+
+model Question {
+  id           String         @id @default(cuid())
+  text         String
+  imageUrl     String?
+  // 4 şık
+  a            String
+  b            String
+  c            String
+  d            String
+  correct      String // "A"|"B"|"C"|"D"
+  timeLimitSec Int            @default(30)
+  createdAt    DateTime       @default(now())
+  quizLinks    QuizQuestion[]
+  answers      Answer[]
+}
+
+model QuizQuestion {
+  quizId     String
+  questionId String
+  order      Int
+
+  quiz     Quiz     @relation(fields: [quizId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@id([quizId, questionId])
+  @@index([quizId, order])
+}
+
+model Assignment {
+  id        String    @id @default(cuid())
+  quizId    String
+  classId   String
+  joinCode  String    @unique
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  quiz     Quiz      @relation(fields: [quizId], references: [id])
+  class    Class     @relation(fields: [classId], references: [id])
+  attempts Attempt[]
+}
+
+model Attempt {
+  id           String    @id @default(cuid())
+  assignmentId String
+  studentId    String
+  status       String    @default("STARTED") // STARTED|FINISHED
+  totalScore   Int       @default(0)
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id])
+  student    Student    @relation(fields: [studentId], references: [id])
+  answers    Answer[]
+
+  @@unique([assignmentId, studentId])
+}
+
+model Answer {
+  id           String   @id @default(cuid())
+  attemptId    String
+  questionId   String
+  selected     String
+  isCorrect    Boolean
+  timeMs       Int
+  scoreAwarded Int
+  createdAt    DateTime @default(now())
+
+  attempt  Attempt  @relation(fields: [attemptId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@index([attemptId])
+}

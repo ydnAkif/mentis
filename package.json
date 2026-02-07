@@ -1,0 +1,10 @@
+{
+  "name": "mentis",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "echo \"Use dev:api or dev:student\"",
+    "dev:api": "pnpm --filter ./apps/api dev",
+    "dev:student": "pnpm --filter ./apps/web-student dev"
+  }
+}

@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: mentis-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mentis
+      POSTGRES_PASSWORD: mentis_dev_pw
+      POSTGRES_DB: mentis
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
