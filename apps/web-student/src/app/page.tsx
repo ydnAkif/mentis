@@ -1,24 +1,38 @@
 "use client";
+
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { API_BASE } from "@/lib/api";
+import { useSound } from "@/components/sound-provider";
 
 type LookupOk = {
   ok: true;
   student: { id: string; firstName: string; lastName: string };
 };
+
 type LookupErr = { ok: false; error: string };
 
-const API = process.env.NEXT_PUBLIC_API_BASE!;
+type StartAttemptOk = {
+  ok: true;
+  attemptId: string;
+  alreadyStarted?: boolean;
+  status?: string;
+  totalScore?: number;
+};
+
+type StartAttemptErr = { ok: false; error: string };
 
 export default function Home() {
+  const router = useRouter();
+  const { play } = useSound();
+
   const [joinCode, setJoinCode] = useState("");
   const [studentNo, setStudentNo] = useState("");
   const [loading, setLoading] = useState(false);
-
   const [student, setStudent] = useState<LookupOk["student"] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -26,14 +40,15 @@ export default function Home() {
     () => (student ? `${student.firstName} ${student.lastName}` : ""),
     [student],
   );
-  const router = useRouter();
 
   async function lookup() {
+    play("click");
     setErr(null);
     setStudent(null);
     setLoading(true);
+
     try {
-      const res = await fetch(`${API}/api/student/lookup`, {
+      const res = await fetch(`${API_BASE}/api/student/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -41,9 +56,15 @@ export default function Home() {
           studentNo: studentNo.trim(),
         }),
       });
+
       const data = (await res.json()) as LookupOk | LookupErr;
-      if (!data.ok) setErr("Kayıt bulunamadı.");
-      else setStudent(data.student);
+
+      if (!data.ok) {
+        setErr("Kayıt bulunamadı.");
+        return;
+      }
+
+      setStudent(data.student);
     } catch {
       setErr("Sunucuya bağlanılamadı.");
     } finally {
@@ -53,10 +74,13 @@ export default function Home() {
 
   async function confirm() {
     if (!student) return;
+
+    play("click");
     setLoading(true);
     setErr(null);
+
     try {
-      const res = await fetch(`${API}/api/attempt/start`, {
+      const res = await fetch(`${API_BASE}/api/attempt/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -64,8 +88,20 @@ export default function Home() {
           studentId: student.id,
         }),
       });
-      const data = await res.json();
-      router.push(`/play/${data.attemptId}`);
+
+      const data = (await res.json()) as StartAttemptOk | StartAttemptErr;
+
+      if (!data.ok || !data.attemptId) {
+        setErr("Başlatılamadı.");
+        return;
+      }
+
+      if (data.status === "FINISHED") {
+        router.replace(`/results/${data.attemptId}`);
+        return;
+      }
+
+      router.replace(`/play/${data.attemptId}`);
     } catch {
       setErr("Başlatılamadı.");
     } finally {
@@ -87,7 +123,7 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25 }}
         >
-          <Card className="bg-zinc-950/60 border-zinc-800 backdrop-blur text-zinc-50">
+          <Card className="bg-zinc-950/60 border-zinc-800 backdrop-blur text-zinc-50 shadow-2xl">
             <CardHeader>
               <CardTitle className="text-2xl tracking-tight text-zinc-50">
                 <span style={{ color: "#6B2BFF" }}>M</span>entis
@@ -102,7 +138,7 @@ export default function Home() {
                 <label className="text-sm text-zinc-300">Atama Kodu</label>
                 <Input
                   value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value)}
+                  onChange={(event) => setJoinCode(event.target.value)}
                   placeholder="Örn: NAMFZT"
                   className="bg-zinc-900/60 border-zinc-800 text-zinc-50 placeholder:text-zinc-500"
                 />
@@ -112,8 +148,8 @@ export default function Home() {
                 <label className="text-sm text-zinc-300">Okul Numarası</label>
                 <Input
                   value={studentNo}
-                  onChange={(e) =>
-                    setStudentNo(e.target.value.replace(/\D/g, ""))
+                  onChange={(event) =>
+                    setStudentNo(event.target.value.replace(/\D/g, ""))
                   }
                   placeholder="Örn: 123"
                   className="bg-zinc-900/60 border-zinc-800 text-zinc-50 placeholder:text-zinc-500"
@@ -158,7 +194,10 @@ export default function Home() {
                       <Button
                         variant="secondary"
                         className="flex-1"
-                        onClick={() => setStudent(null)}
+                        onClick={() => {
+                          play("click");
+                          setStudent(null);
+                        }}
                         disabled={loading}
                       >
                         Yanlış

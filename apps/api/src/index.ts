@@ -12,7 +12,6 @@ async function main() {
     credentials: true,
   });
 
-  // health check
   app.get("/health", async () => ({ ok: true }));
 
   // 1) Öğrenci numarası -> ad soyad doğrulama
@@ -90,6 +89,7 @@ async function main() {
         where: { assignmentId: assignment.id, studentId: body.studentId },
         select: { id: true, status: true, totalScore: true },
       });
+
       return reply.code(200).send({
         ok: true,
         attemptId: existing?.id,
@@ -100,7 +100,7 @@ async function main() {
     }
   });
 
-  // 3) Attempt -> quiz + sorular (şimdilik hepsini veriyoruz)
+  // 3) Attempt -> quiz + sorular
   app.get("/api/attempt/:attemptId/quiz", async (req, reply) => {
     const params = z.object({ attemptId: z.string().min(1) }).parse(req.params);
 
@@ -109,8 +109,20 @@ async function main() {
       select: {
         id: true,
         status: true,
+        totalScore: true,
+        answers: {
+          select: {
+            questionId: true,
+            selected: true,
+            isCorrect: true,
+            scoreAwarded: true,
+            timeMs: true,
+          },
+          orderBy: { createdAt: "asc" },
+        },
         assignment: {
           select: {
+            id: true,
             quiz: {
               select: {
                 id: true,
@@ -140,13 +152,79 @@ async function main() {
       },
     });
 
-    if (!attempt)
+    if (!attempt) {
       return reply.code(404).send({ ok: false, error: "ATTEMPT_NOT_FOUND" });
+    }
 
     return { ok: true, attempt };
   });
 
-  // 4) Soru cevaplama (Answer)
+  // 4) Attempt sonucu özeti
+  app.get("/api/attempt/:attemptId/result", async (req, reply) => {
+    const params = z.object({ attemptId: z.string().min(1) }).parse(req.params);
+
+    const attempt = await prisma.attempt.findUnique({
+      where: { id: params.attemptId },
+      select: {
+        id: true,
+        status: true,
+        totalScore: true,
+        startedAt: true,
+        finishedAt: true,
+        answers: {
+          select: { isCorrect: true },
+        },
+        assignment: {
+          select: {
+            id: true,
+            quiz: {
+              select: {
+                title: true,
+                questions: {
+                  select: { questionId: true },
+                },
+              },
+            },
+          },
+        },
+        student: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!attempt) {
+      return reply.code(404).send({ ok: false, error: "ATTEMPT_NOT_FOUND" });
+    }
+
+    const answeredCount = attempt.answers.length;
+    const correctCount = attempt.answers.filter(
+      (answer) => answer.isCorrect,
+    ).length;
+    const totalQuestions = attempt.assignment.quiz.questions.length;
+
+    return {
+      ok: true,
+      result: {
+        attemptId: attempt.id,
+        status: attempt.status,
+        totalScore: attempt.totalScore,
+        answeredCount,
+        correctCount,
+        totalQuestions,
+        assignmentId: attempt.assignment.id,
+        quizTitle: attempt.assignment.quiz.title,
+        studentName: `${attempt.student.firstName} ${attempt.student.lastName}`,
+        startedAt: attempt.startedAt,
+        finishedAt: attempt.finishedAt,
+      },
+    };
+  });
+
+  // 5) Soru cevaplama (Answer)
   app.post("/api/attempt/:attemptId/answer", async (req, reply) => {
     const params = z.object({ attemptId: z.string().min(1) }).parse(req.params);
     const body = z
@@ -161,29 +239,41 @@ async function main() {
       where: { id: params.attemptId },
     });
 
-    if (!attempt) return reply.code(404).send({ ok: false, error: "ATTEMPT_NOT_FOUND" });
-    if (attempt.status !== "STARTED") return reply.code(400).send({ ok: false, error: "ATTEMPT_ALREADY_FINISHED" });
+    if (!attempt) {
+      return reply.code(404).send({ ok: false, error: "ATTEMPT_NOT_FOUND" });
+    }
 
-    // Soru daha önce cevaplanmış mı?
+    if (attempt.status !== "STARTED") {
+      return reply
+        .code(400)
+        .send({ ok: false, error: "ATTEMPT_ALREADY_FINISHED" });
+    }
+
     const existingAnswer = await prisma.answer.findFirst({
       where: { attemptId: attempt.id, questionId: body.questionId },
     });
-    if (existingAnswer) return reply.code(400).send({ ok: false, error: "QUESTION_ALREADY_ANSWERED" });
 
-    // Soru bilgilerini al (doğru cevap ve süre)
-    const question = await prisma.question.findUnique({ where: { id: body.questionId } });
-    if (!question) return reply.code(404).send({ ok: false, error: "QUESTION_NOT_FOUND" });
+    if (existingAnswer) {
+      return reply
+        .code(400)
+        .send({ ok: false, error: "QUESTION_ALREADY_ANSWERED" });
+    }
 
-    // Puan hesaplama (Zaman bazlı)
-    // Maksimum puan: 1000
-    // Zaman geçtikçe puan düşer, ama doğruysa en az %30 unu alır (300 puan). Yanlışsa 0.
+    const question = await prisma.question.findUnique({
+      where: { id: body.questionId },
+    });
+
+    if (!question) {
+      return reply.code(404).send({ ok: false, error: "QUESTION_NOT_FOUND" });
+    }
+
     let scoreAwarded = 0;
     const isCorrect = question.correct === body.selected;
 
     if (isCorrect) {
       const maxTimeMs = question.timeLimitSec * 1000;
       const timeRatio = Math.max(0, Math.min(1, body.timeMs / maxTimeMs));
-      scoreAwarded = Math.round(1000 * (1 - (timeRatio * 0.7))); // Max 1000, Min 300
+      scoreAwarded = Math.round(1000 * (1 - timeRatio * 0.7));
     }
 
     await prisma.answer.create({
@@ -202,16 +292,29 @@ async function main() {
       data: { totalScore: { increment: scoreAwarded } },
     });
 
-    return { ok: true, isCorrect, correctOption: question.correct, scoreAwarded };
+    return {
+      ok: true,
+      isCorrect,
+      correctOption: question.correct,
+      scoreAwarded,
+    };
   });
 
-  // 5) Attempt bitirme (Finish)
+  // 6) Attempt bitirme (Finish)
   app.post("/api/attempt/:attemptId/finish", async (req, reply) => {
     const params = z.object({ attemptId: z.string().min(1) }).parse(req.params);
 
-    const attempt = await prisma.attempt.findUnique({ where: { id: params.attemptId } });
-    if (!attempt) return reply.code(404).send({ ok: false, error: "ATTEMPT_NOT_FOUND" });
-    if (attempt.status === "FINISHED") return reply.code(400).send({ ok: false, error: "ALREADY_FINISHED" });
+    const attempt = await prisma.attempt.findUnique({
+      where: { id: params.attemptId },
+    });
+
+    if (!attempt) {
+      return reply.code(404).send({ ok: false, error: "ATTEMPT_NOT_FOUND" });
+    }
+
+    if (attempt.status === "FINISHED") {
+      return reply.code(400).send({ ok: false, error: "ALREADY_FINISHED" });
+    }
 
     const finishedAttempt = await prisma.attempt.update({
       where: { id: attempt.id },
@@ -224,11 +327,24 @@ async function main() {
     return { ok: true, totalScore: finishedAttempt.totalScore };
   });
 
-  // 6) Liderlik Tablosu (Leaderboard)
+  // 7) Liderlik Tablosu (Leaderboard)
   app.get("/api/assignment/:assignmentId/leaderboard", async (req, reply) => {
-    const params = z.object({ assignmentId: z.string().min(1) }).parse(req.params);
+    const params = z
+      .object({ assignmentId: z.string().min(1) })
+      .parse(req.params);
 
-    // Sadece FINISHED attemptleri de getirebiliriz ama canli liderlik de olabilir
+    const assignment = await prisma.assignment.findUnique({
+      where: { id: params.assignmentId },
+      select: {
+        id: true,
+        quiz: { select: { title: true } },
+      },
+    });
+
+    if (!assignment) {
+      return reply.code(404).send({ ok: false, error: "ASSIGNMENT_NOT_FOUND" });
+    }
+
     const attempts = await prisma.attempt.findMany({
       where: { assignmentId: params.assignmentId },
       orderBy: { totalScore: "desc" },
@@ -238,13 +354,20 @@ async function main() {
       },
     });
 
-    const leaderboard = attempts.map((a) => ({
-      attemptId: a.id,
-      name: `${a.student.firstName} ${a.student.lastName.charAt(0)}.`,
-      score: a.totalScore,
+    const leaderboard = attempts.map((attempt, index) => ({
+      rank: index + 1,
+      attemptId: attempt.id,
+      name: `${attempt.student.firstName} ${attempt.student.lastName.charAt(0)}.`,
+      score: attempt.totalScore,
+      status: attempt.status,
     }));
 
-    return { ok: true, leaderboard };
+    return {
+      ok: true,
+      assignmentId: assignment.id,
+      quizTitle: assignment.quiz.title,
+      leaderboard,
+    };
   });
 
   const port = Number(process.env.PORT ?? 4000);

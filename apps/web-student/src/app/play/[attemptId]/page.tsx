@@ -1,14 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { API_BASE } from "@/lib/api";
+import { useSound } from "@/components/sound-provider";
 
-const API = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000";
-
-/* ─────────────────────────────────────────────────────
-   Types
-───────────────────────────────────────────────────── */
 type QuestionDTO = {
   id: string;
   text: string;
@@ -20,11 +19,48 @@ type QuestionDTO = {
   timeLimitSec: number;
 };
 
-type Phase = "loading" | "playing" | "feedback" | "timeout" | "finished";
+type ExistingAnswerDTO = {
+  questionId: string;
+  selected: string;
+  isCorrect: boolean;
+  scoreAwarded: number;
+  timeMs: number;
+};
 
-/* ─────────────────────────────────────────────────────
-   Design constants — one colour per answer option
-───────────────────────────────────────────────────── */
+type QuizResponse =
+  | {
+      ok: true;
+      attempt: {
+        id: string;
+        status: string;
+        totalScore: number;
+        answers: ExistingAnswerDTO[];
+        assignment: {
+          id: string;
+          quiz: {
+            id: string;
+            title: string;
+            questions: Array<{
+              order: number;
+              question: QuestionDTO;
+            }>;
+          };
+        };
+      };
+    }
+  | { ok: false; error: string };
+
+type AnswerResponse =
+  | {
+      ok: true;
+      isCorrect: boolean;
+      correctOption: string;
+      scoreAwarded: number;
+    }
+  | { ok: false; error: string };
+
+type Phase = "loading" | "playing" | "feedback" | "timeout";
+
 const OPTS: Record<
   string,
   { bg: string; border: string; shadow: string; darkText: boolean }
@@ -55,9 +91,6 @@ const OPTS: Record<
   },
 };
 
-/* ─────────────────────────────────────────────────────
-   Sub-component: Circular SVG countdown timer
-───────────────────────────────────────────────────── */
 function CircularTimer({
   timeLeft,
   total,
@@ -65,27 +98,27 @@ function CircularTimer({
   timeLeft: number;
   total: number;
 }) {
-  const R = 30;
-  const SW = 4;
-  const SIZE = (R + SW + 2) * 2;
-  const CIRC = 2 * Math.PI * R;
+  const radius = 30;
+  const strokeWidth = 4;
+  const size = (radius + strokeWidth + 2) * 2;
+  const circumference = 2 * Math.PI * radius;
   const pct = Math.max(0, timeLeft / Math.max(total, 1));
-  const dashOffset = CIRC * (1 - pct);
+  const dashOffset = circumference * (1 - pct);
   const color = pct > 0.5 ? "#00D084" : pct > 0.2 ? "#FFD000" : "#FF1744";
   const pulse = timeLeft > 0 && timeLeft <= 5;
 
   return (
     <motion.div
       className="relative flex items-center justify-center"
-      style={{ width: SIZE, height: SIZE }}
+      style={{ width: size, height: size }}
       animate={pulse ? { scale: [1, 1.13, 1] } : { scale: 1 }}
       transition={
         pulse ? { duration: 0.65, repeat: Infinity, ease: "easeInOut" } : {}
       }
     >
       <svg
-        width={SIZE}
-        height={SIZE}
+        width={size}
+        height={size}
         style={{
           position: "absolute",
           top: 0,
@@ -94,21 +127,21 @@ function CircularTimer({
         }}
       >
         <circle
-          cx={SIZE / 2}
-          cy={SIZE / 2}
-          r={R}
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
           stroke="rgba(255,255,255,0.12)"
-          strokeWidth={SW}
+          strokeWidth={strokeWidth}
           fill="none"
         />
         <circle
-          cx={SIZE / 2}
-          cy={SIZE / 2}
-          r={R}
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
           stroke={color}
-          strokeWidth={SW}
+          strokeWidth={strokeWidth}
           fill="none"
-          strokeDasharray={CIRC}
+          strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
           strokeLinecap="round"
           style={{
@@ -126,9 +159,6 @@ function CircularTimer({
   );
 }
 
-/* ─────────────────────────────────────────────────────
-   Sub-component: Answer button (A / B / C / D)
-───────────────────────────────────────────────────── */
 function AnswerBtn({
   optKey,
   text,
@@ -148,7 +178,7 @@ function AnswerBtn({
 }) {
   const s = OPTS[optKey];
   const isFeedback = phase === "feedback" || phase === "timeout";
-  const isMe = selected === optKey;
+  const isSelected = selected === optKey;
   const isRight = correctOption === optKey;
   const disabled = !!selected || phase !== "playing";
 
@@ -160,7 +190,7 @@ function AnswerBtn({
     if (isRight) {
       bg = "#00D084";
       shadow = "0 8px 28px rgba(0,208,132,0.6)";
-    } else if (isMe) {
+    } else if (isSelected) {
       bg = "#FF1744";
       shadow = "0 8px 28px rgba(255,23,68,0.6)";
     } else {
@@ -181,62 +211,60 @@ function AnswerBtn({
       whileTap={!disabled ? { scale: 0.96 } : {}}
       onClick={onClick}
       disabled={disabled}
-      className="w-full text-left rounded-2xl p-4 flex items-center gap-3 font-semibold text-[15px] transition-colors duration-300 focus:outline-none disabled:cursor-default cursor-pointer"
+      className="w-full cursor-pointer rounded-2xl border-2 p-4 text-left text-[15px] font-semibold transition-colors duration-300 focus:outline-none disabled:cursor-default"
       style={{
         backgroundColor: bg,
         boxShadow: shadow,
-        border: `2px solid ${s.border}`,
+        borderColor: s.border,
         color: textColor,
       }}
     >
-      {/* Option letter badge */}
-      <span
-        className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-        style={{ backgroundColor: "rgba(0,0,0,0.22)", color: textColor }}
-      >
-        {optKey}
-      </span>
+      <div className="flex items-center gap-3">
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold"
+          style={{ backgroundColor: "rgba(0,0,0,0.22)", color: textColor }}
+        >
+          {optKey}
+        </span>
 
-      <span className="flex-1 leading-snug">{text}</span>
+        <span className="flex-1 leading-snug">{text}</span>
 
-      <AnimatePresence>
-        {isFeedback && isRight && (
-          <motion.span
-            key="check"
-            initial={{ scale: 0, rotate: -120 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: "spring", stiffness: 300 }}
-            className="text-xl shrink-0"
-          >
-            ✅
-          </motion.span>
-        )}
-        {isFeedback && isMe && !isRight && (
-          <motion.span
-            key="x"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", stiffness: 300 }}
-            className="text-xl shrink-0"
-          >
-            ❌
-          </motion.span>
-        )}
-      </AnimatePresence>
+        <AnimatePresence>
+          {isFeedback && isRight && (
+            <motion.span
+              key="check"
+              initial={{ scale: 0, rotate: -120 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", stiffness: 300 }}
+              className="text-xl shrink-0"
+            >
+              ✅
+            </motion.span>
+          )}
+          {isFeedback && isSelected && !isRight && (
+            <motion.span
+              key="x"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 300 }}
+              className="text-xl shrink-0"
+            >
+              ❌
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </div>
     </motion.button>
   );
 }
 
-/* ─────────────────────────────────────────────────────
-   Sub-component: Floating "+score" animation
-───────────────────────────────────────────────────── */
 function ScorePop({ score }: { score: number }) {
   return (
     <motion.div
       initial={{ opacity: 1, y: 0, scale: 0.8 }}
       animate={{ opacity: 0, y: -72, scale: 1.1 }}
       transition={{ duration: 1.4, ease: "easeOut" }}
-      className="absolute -top-2 right-4 pointer-events-none z-50 font-bold text-2xl"
+      className="pointer-events-none absolute -top-2 right-4 z-50 text-2xl font-bold"
       style={{
         color: "#00D084",
         textShadow: "0 0 20px rgba(0,208,132,0.8)",
@@ -247,342 +275,300 @@ function ScorePop({ score }: { score: number }) {
   );
 }
 
-/* ─────────────────────────────────────────────────────
-   Sub-component: Results / completion screen
-───────────────────────────────────────────────────── */
-function ResultsScreen({
-  quizTitle,
-  totalScore,
-  correctCount,
-  total,
-}: {
-  quizTitle: string;
-  totalScore: number;
-  correctCount: number;
-  total: number;
-}) {
-  const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
-
-  return (
-    <main
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background:
-          "linear-gradient(135deg, #0F0F23 0%, #1a0933 50%, #0F0F23 100%)",
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.85 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: "spring", stiffness: 140, damping: 15 }}
-        className="w-full max-w-md text-center space-y-6"
-      >
-        {/* Party emoji */}
-        <motion.div
-          animate={{ rotate: [0, -10, 10, -10, 10, 0] }}
-          transition={{ delay: 0.5, duration: 0.8 }}
-          className="text-7xl"
-        >
-          🎉
-        </motion.div>
-
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Tebrikler!</h1>
-          <p className="text-zinc-400 text-sm">{quizTitle}</p>
-        </div>
-
-        {/* Total score */}
-        <div
-          className="rounded-3xl p-6 border border-white/10"
-          style={{
-            background: "rgba(107,43,255,0.15)",
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <p className="text-zinc-400 text-sm mb-2">Toplam Puan</p>
-          <motion.p
-            className="text-5xl font-bold tabular-nums"
-            style={{
-              color: "#6B2BFF",
-              textShadow: "0 0 40px rgba(107,43,255,0.6)",
-            }}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-          >
-            {totalScore.toLocaleString("tr-TR")}
-          </motion.p>
-        </div>
-
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <div
-            className="rounded-2xl p-4 border border-white/10"
-            style={{ background: "rgba(0,208,132,0.1)" }}
-          >
-            <p
-              className="text-2xl font-bold tabular-nums"
-              style={{ color: "#00D084" }}
-            >
-              {correctCount}/{total}
-            </p>
-            <p className="text-zinc-400 text-sm">Doğru Cevap</p>
-          </div>
-          <div
-            className="rounded-2xl p-4 border border-white/10"
-            style={{ background: "rgba(30,144,255,0.1)" }}
-          >
-            <p
-              className="text-2xl font-bold tabular-nums"
-              style={{ color: "#1E90FF" }}
-            >
-              %{accuracy}
-            </p>
-            <p className="text-zinc-400 text-sm">Doğruluk</p>
-          </div>
-        </div>
-      </motion.div>
-    </main>
-  );
-}
-
-/* ─────────────────────────────────────────────────────
-   Main page component
-───────────────────────────────────────────────────── */
 export default function PlayPage() {
   const { attemptId } = useParams<{ attemptId: string }>();
+  const router = useRouter();
+  const { play } = useSound();
 
-  /* ── Data ─────────────────── */
   const [quizTitle, setQuizTitle] = useState("");
+  const [assignmentId, setAssignmentId] = useState("");
   const [questions, setQuestions] = useState<QuestionDTO[]>([]);
-
-  // Refs for stale-closure-safe access inside callbacks / timers
-  const questionsRef = useRef<QuestionDTO[]>([]);
-  useEffect(() => {
-    questionsRef.current = questions;
-  }, [questions]);
-
-  /* ── Flow ─────────────────── */
   const [phase, setPhase] = useState<Phase>("loading");
   const [currentIdx, setCurrentIdx] = useState(0);
-  const currentIdxRef = useRef(0);
-  useEffect(() => {
-    currentIdxRef.current = currentIdx;
-  }, [currentIdx]);
-
-  // Incremented each time a new question starts → triggers timer useEffect
   const [questionKey, setQuestionKey] = useState(0);
-
   const [err, setErr] = useState<string | null>(null);
 
-  /* ── Answer state ─────────── */
   const [selected, setSelected] = useState<string | null>(null);
   const [correctOption, setCorrectOption] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [lastScore, setLastScore] = useState(0);
   const [showScorePop, setShowScorePop] = useState(false);
-  const submittingRef = useRef(false); // prevents double-submit
 
-  /* ── Score ────────────────── */
   const [totalScore, setTotalScore] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
-
-  /* ── Timer ────────────────── */
   const [timeLeft, setTimeLeft] = useState(30);
-  const questionStartRef = useRef(Date.now());
+
+  const questionsRef = useRef<QuestionDTO[]>([]);
+  const currentIdxRef = useRef(0);
+  const questionStartRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submittingRef = useRef(false);
+  const countdownSoundRef = useRef<number | null>(null);
 
-  /* ──────────────────────────────────────────────
-     advanceQuestion — reads from refs so it's safe
-     to call from setTimeout without stale closures
-  ─────────────────────────────────────────────── */
-  const advanceQuestion = useCallback(() => {
-    // Clear any pending timers
+  useEffect(() => {
+    questionsRef.current = questions;
+  }, [questions]);
+
+  useEffect(() => {
+    currentIdxRef.current = currentIdx;
+  }, [currentIdx]);
+
+  const clearTimers = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
     if (feedbackTimerRef.current) {
       clearTimeout(feedbackTimerRef.current);
       feedbackTimerRef.current = null;
     }
+  }, []);
+
+  const routeToResults = useCallback(() => {
+    router.replace(`/results/${attemptId}`);
+  }, [attemptId, router]);
+
+  const resetFeedbackState = useCallback(() => {
+    setSelected(null);
+    setCorrectOption(null);
+    setIsCorrect(null);
+    setLastScore(0);
+    setShowScorePop(false);
+    countdownSoundRef.current = null;
+  }, []);
+
+  const advanceQuestion = useCallback(async () => {
+    clearTimers();
     submittingRef.current = false;
 
     const nextIdx = currentIdxRef.current + 1;
 
     if (nextIdx >= questionsRef.current.length) {
-      // Last question done → finish attempt on backend
-      fetch(`${API}/api/attempt/${attemptId}/finish`, {
-        method: "POST",
-      }).catch(() => {});
-      setPhase("finished");
-    } else {
-      // Reset answer state for the next question
-      setSelected(null);
-      setCorrectOption(null);
-      setIsCorrect(null);
-      setLastScore(0);
-      setShowScorePop(false);
-      setCurrentIdx(nextIdx);
-      setQuestionKey((k) => k + 1); // triggers timer useEffect
-      setPhase("playing");
-    }
-  }, [attemptId]);
-
-  /* ──────────────────────────────────────────────
-     Load quiz data
-  ─────────────────────────────────────────────── */
-  useEffect(() => {
-    (async () => {
       try {
-        const res = await fetch(`${API}/api/attempt/${attemptId}/quiz`);
-        const json = await res.json();
-        if (!json.ok) {
-          setErr("Quiz yüklenemedi.");
+        await fetch(`${API_BASE}/api/attempt/${attemptId}/finish`, {
+          method: "POST",
+        });
+      } catch {
+        // sonucu sayfada çekerken tekrar okuyacağız
+      }
+
+      routeToResults();
+      return;
+    }
+
+    resetFeedbackState();
+    setCurrentIdx(nextIdx);
+    setQuestionKey((key) => key + 1);
+    setPhase("playing");
+  }, [attemptId, clearTimers, resetFeedbackState, routeToResults]);
+
+  useEffect(() => {
+    return () => {
+      clearTimers();
+    };
+  }, [clearTimers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setErr(null);
+      setPhase("loading");
+
+      try {
+        const res = await fetch(`${API_BASE}/api/attempt/${attemptId}/quiz`);
+        const data = (await res.json()) as QuizResponse;
+
+        if (!data.ok) {
+          if (!cancelled) setErr("Quiz yüklenemedi.");
           return;
         }
 
-        const qs: QuestionDTO[] = (
-          json.attempt.assignment.quiz.questions as Array<{
-            order: number;
-            question: QuestionDTO;
-          }>
-        )
-          .sort((a, b) => a.order - b.order)
-          .map((q) => q.question);
+        if (data.attempt.status === "FINISHED") {
+          routeToResults();
+          return;
+        }
 
-        setQuizTitle(json.attempt.assignment.quiz.title);
-        setQuestions(qs);
-        setQuestionKey((k) => k + 1); // fire timer for question #0
-        setPhase("playing");
+        const qs = data.attempt.assignment.quiz.questions
+          .sort((a, b) => a.order - b.order)
+          .map((item) => item.question);
+
+        const existingAnswers = data.attempt.answers ?? [];
+        const answeredCount = existingAnswers.length;
+
+        if (!qs.length) {
+          if (!cancelled) setErr("Bu quiz için soru bulunamadı.");
+          return;
+        }
+
+        if (!cancelled) {
+          setQuizTitle(data.attempt.assignment.quiz.title);
+          setAssignmentId(data.attempt.assignment.id);
+          setQuestions(qs);
+          setTotalScore(data.attempt.totalScore ?? 0);
+          resetFeedbackState();
+        }
+
+        if (answeredCount >= qs.length) {
+          try {
+            await fetch(`${API_BASE}/api/attempt/${attemptId}/finish`, {
+              method: "POST",
+            });
+          } catch {
+            // deneme zaten bitmiş olabilir
+          }
+
+          routeToResults();
+          return;
+        }
+
+        if (!cancelled) {
+          setCurrentIdx(answeredCount);
+          setQuestionKey((key) => key + 1);
+          setPhase("playing");
+        }
       } catch {
-        setErr("Sunucuya bağlanılamadı.");
+        if (!cancelled) setErr("Sunucuya bağlanılamadı.");
       }
     })();
-  }, [attemptId]);
 
-  /* ──────────────────────────────────────────────
-     Start/reset the countdown timer on each new question
-     Depends on questionKey so it re-runs per question.
-  ─────────────────────────────────────────────── */
+    return () => {
+      cancelled = true;
+    };
+  }, [attemptId, resetFeedbackState, routeToResults]);
+
   useEffect(() => {
-    const q = questionsRef.current[currentIdxRef.current];
-    if (!q || phase !== "playing") return;
+    const currentQuestion = questionsRef.current[currentIdxRef.current];
+    if (!currentQuestion || phase !== "playing") return;
 
-    setTimeLeft(q.timeLimitSec);
+    clearTimers();
+    countdownSoundRef.current = null;
+    setTimeLeft(currentQuestion.timeLimitSec);
     questionStartRef.current = Date.now();
 
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    const id = setInterval(() => {
+    const intervalId = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(id);
+          clearInterval(intervalId);
+          timerRef.current = null;
+          setPhase("timeout");
+          feedbackTimerRef.current = setTimeout(() => {
+            void advanceQuestion();
+          }, 2500);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    timerRef.current = id;
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionKey]);
+    timerRef.current = intervalId;
 
-  /* ──────────────────────────────────────────────
-     Detect timer expiry → timeout phase
-  ─────────────────────────────────────────────── */
+    return () => clearInterval(intervalId);
+  }, [advanceQuestion, clearTimers, phase, questionKey]);
+
   useEffect(() => {
-    if (timeLeft !== 0 || phase !== "playing") return;
-    setPhase("timeout");
-    feedbackTimerRef.current = setTimeout(advanceQuestion, 2500);
-  }, [timeLeft, phase, advanceQuestion]);
+    if (phase !== "playing") return;
+    if (timeLeft <= 0 || timeLeft > 5) return;
+    if (countdownSoundRef.current === timeLeft) return;
 
-  /* ──────────────────────────────────────────────
-     Submit an answer to the backend
-  ─────────────────────────────────────────────── */
+    countdownSoundRef.current = timeLeft;
+    play("countdown");
+  }, [phase, play, timeLeft]);
+
   const submitAnswer = useCallback(
     async (key: string) => {
       if (submittingRef.current || phase !== "playing") return;
+
+      const currentQuestion = questionsRef.current[currentIdxRef.current];
+      if (!currentQuestion) return;
+
       submittingRef.current = true;
-
-      // Stop the countdown immediately
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-
-      const timeMs = Date.now() - questionStartRef.current;
+      clearTimers();
+      countdownSoundRef.current = null;
       setSelected(key);
 
-      const currentQ = questionsRef.current[currentIdxRef.current];
+      const timeMs = Date.now() - questionStartRef.current;
 
       try {
-        const res = await fetch(`${API}/api/attempt/${attemptId}/answer`, {
+        const res = await fetch(`${API_BASE}/api/attempt/${attemptId}/answer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            questionId: currentQ?.id ?? "",
+            questionId: currentQuestion.id,
             selected: key,
             timeMs,
           }),
         });
-        const data = await res.json();
 
-        if (data.ok) {
+        const data = (await res.json()) as AnswerResponse;
+
+        if (!data.ok) {
+          if (data.error === "ATTEMPT_ALREADY_FINISHED") {
+            routeToResults();
+            return;
+          }
+
+          setIsCorrect(false);
+          setCorrectOption(null);
+          play("wrong");
+        } else {
           setIsCorrect(data.isCorrect);
           setCorrectOption(data.correctOption);
-          setTotalScore((s) => s + (data.scoreAwarded ?? 0));
+          setTotalScore((score) => score + (data.scoreAwarded ?? 0));
 
           if (data.isCorrect) {
-            setCorrectCount((c) => c + 1);
             setLastScore(data.scoreAwarded ?? 0);
             setShowScorePop(true);
             setTimeout(() => setShowScorePop(false), 1600);
+            play("correct");
+          } else {
+            play("wrong");
           }
-        } else {
-          setIsCorrect(false);
-          setCorrectOption(null);
         }
       } catch {
         setIsCorrect(false);
         setCorrectOption(null);
+        play("wrong");
       }
 
       setPhase("feedback");
-      feedbackTimerRef.current = setTimeout(advanceQuestion, 2500);
+      feedbackTimerRef.current = setTimeout(() => {
+        void advanceQuestion();
+      }, 2500);
     },
-    [phase, attemptId, advanceQuestion],
+    [advanceQuestion, attemptId, clearTimers, phase, play, routeToResults],
   );
 
-  /* ──────────────────────────────────────────────
-     Derived values
-  ─────────────────────────────────────────────── */
   const currentQuestion = questions[currentIdx] ?? null;
   const progressPct =
     questions.length > 0 ? (currentIdx / questions.length) * 100 : 0;
 
-  /* ──────────────────────────────────────────────
-     Render: error
-  ─────────────────────────────────────────────── */
   if (err) {
     return (
       <main
-        className="min-h-screen flex items-center justify-center"
+        className="min-h-screen flex items-center justify-center p-4"
         style={{ background: "#0F0F23" }}
       >
-        <div className="text-center text-white space-y-2">
-          <div className="text-4xl">⚠️</div>
-          <p className="text-lg">{err}</p>
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-white shadow-xl backdrop-blur">
+          <div className="text-5xl">⚠️</div>
+          <h1 className="mt-4 text-2xl font-bold">Quiz açılamadı</h1>
+          <p className="mt-2 text-sm text-zinc-400">{err}</p>
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Button asChild>
+              <Link href="/">Ana Sayfa</Link>
+            </Button>
+            {assignmentId && (
+              <Button asChild variant="secondary">
+                <Link href={`/leaderboard/${assignmentId}`}>Leaderboard</Link>
+              </Button>
+            )}
+          </div>
         </div>
       </main>
     );
   }
 
-  /* ──────────────────────────────────────────────
-     Render: loading
-  ─────────────────────────────────────────────── */
   if (phase === "loading") {
     return (
       <main
@@ -594,27 +580,15 @@ export default function PlayPage() {
           transition={{ duration: 1.5, repeat: Infinity }}
           className="text-white text-lg"
         >
-          Yükleniyor...
+          Quiz yükleniyor...
         </motion.div>
       </main>
     );
   }
 
-  /* ──────────────────────────────────────────────
-     Render: finished
-  ─────────────────────────────────────────────── */
-  if (phase === "finished") {
-    return (
-      <ResultsScreen
-        quizTitle={quizTitle}
-        totalScore={totalScore}
-        correctCount={correctCount}
-        total={questions.length}
-      />
-    );
+  if (!currentQuestion) {
+    return null;
   }
-
-  if (!currentQuestion) return null;
 
   const choices = [
     { key: "A", text: currentQuestion.a },
@@ -623,9 +597,6 @@ export default function PlayPage() {
     { key: "D", text: currentQuestion.d },
   ] as const;
 
-  /* ──────────────────────────────────────────────
-     Render: active quiz
-  ─────────────────────────────────────────────── */
   return (
     <main
       className="min-h-screen flex flex-col"
@@ -634,52 +605,47 @@ export default function PlayPage() {
           "linear-gradient(160deg, #0F0F23 0%, #14082e 50%, #0F0F23 100%)",
       }}
     >
-      {/* ── Header bar ─────────────────────── */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-2 max-w-2xl mx-auto w-full">
-        {/* Score badge */}
-        <div
-          className="rounded-xl px-3 py-1.5 border border-white/10 text-sm font-medium"
-          style={{ background: "rgba(107,43,255,0.2)" }}
-        >
-          <span style={{ color: "rgba(140,80,255,0.9)" }}>●</span>{" "}
-          <span className="tabular-nums font-bold text-white">
-            {totalScore.toLocaleString("tr-TR")}
-          </span>
-          <span className="text-zinc-400"> puan</span>
+      <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pt-4 pb-2">
+        <div>
+          <div
+            className="rounded-xl border border-white/10 px-3 py-1.5 text-sm font-medium"
+            style={{ background: "rgba(107,43,255,0.2)" }}
+          >
+            <span style={{ color: "rgba(140,80,255,0.9)" }}>●</span>{" "}
+            <span className="font-bold tabular-nums text-white">
+              {totalScore.toLocaleString("tr-TR")}
+            </span>
+            <span className="text-zinc-400"> puan</span>
+          </div>
+          <p className="mt-2 text-xs text-zinc-400">{quizTitle}</p>
         </div>
 
-        {/* Question number */}
         <span className="text-sm text-zinc-400">
-          <span className="text-white font-semibold">{currentIdx + 1}</span>/
+          <span className="font-semibold text-white">{currentIdx + 1}</span>/
           {questions.length}
         </span>
 
-        {/* Circular timer */}
         <CircularTimer
           timeLeft={timeLeft}
           total={currentQuestion.timeLimitSec}
         />
       </div>
 
-      {/* ── Progress bar ───────────────────── */}
-      <div className="px-4 pb-3 max-w-2xl mx-auto w-full">
+      <div className="mx-auto w-full max-w-2xl px-4 pb-3">
         <div
-          className="w-full h-1.5 rounded-full overflow-hidden"
+          className="h-1.5 w-full overflow-hidden rounded-full"
           style={{ background: "rgba(255,255,255,0.08)" }}
         >
           <motion.div
             className="h-full rounded-full"
-            style={{
-              background: "linear-gradient(90deg, #6B2BFF, #1E90FF)",
-            }}
+            style={{ background: "linear-gradient(90deg, #6B2BFF, #1E90FF)" }}
             animate={{ width: `${progressPct}%` }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
           />
         </div>
       </div>
 
-      {/* ── Question + Answers ─────────────── */}
-      <div className="flex-1 px-4 pb-6 max-w-2xl mx-auto w-full flex flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 pb-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentIdx}
@@ -687,11 +653,10 @@ export default function PlayPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -30 }}
             transition={{ duration: 0.28, ease: "easeInOut" }}
-            className="flex flex-col gap-4 flex-1"
+            className="flex flex-1 flex-col gap-4"
           >
-            {/* Question text card */}
             <div
-              className="rounded-2xl p-5 border border-white/10"
+              className="rounded-2xl border border-white/10 p-5"
               style={{
                 background: "rgba(255,255,255,0.04)",
                 backdropFilter: "blur(10px)",
@@ -702,15 +667,14 @@ export default function PlayPage() {
                 <img
                   src={currentQuestion.imageUrl}
                   alt=""
-                  className="w-full max-h-48 object-cover rounded-xl mb-4"
+                  className="mb-4 max-h-48 w-full rounded-xl object-cover"
                 />
               )}
-              <p className="text-white text-lg font-semibold leading-relaxed">
+              <p className="text-lg font-semibold leading-relaxed text-white">
                 {currentQuestion.text}
               </p>
             </div>
 
-            {/* Status banners (timeout / feedback) */}
             <AnimatePresence>
               {phase === "timeout" && (
                 <motion.div
@@ -718,7 +682,7 @@ export default function PlayPage() {
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="rounded-xl px-4 py-3 text-center font-semibold text-white text-sm"
+                  className="rounded-xl px-4 py-3 text-center text-sm font-semibold text-white"
                   style={{
                     background: "rgba(255,23,68,0.18)",
                     border: "1px solid rgba(255,23,68,0.35)",
@@ -734,7 +698,7 @@ export default function PlayPage() {
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="rounded-xl px-4 py-3 text-center font-semibold text-sm"
+                  className="rounded-xl px-4 py-3 text-center text-sm font-semibold"
                   style={
                     isCorrect
                       ? {
@@ -756,20 +720,19 @@ export default function PlayPage() {
               )}
             </AnimatePresence>
 
-            {/* Answer buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+            <div className="relative grid grid-cols-1 gap-3 sm:grid-cols-2">
               {showScorePop && <ScorePop score={lastScore} />}
 
-              {choices.map((c, i) => (
+              {choices.map((choice, index) => (
                 <AnswerBtn
-                  key={c.key}
-                  optKey={c.key}
-                  text={c.text}
+                  key={choice.key}
+                  optKey={choice.key}
+                  text={choice.text}
                   selected={selected}
                   correctOption={correctOption}
                   phase={phase}
-                  onClick={() => submitAnswer(c.key)}
-                  delay={i * 0.07}
+                  onClick={() => void submitAnswer(choice.key)}
+                  delay={index * 0.07}
                 />
               ))}
             </div>
