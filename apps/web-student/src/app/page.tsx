@@ -6,7 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-type LookupOk = { ok: true; student: { id: string; firstName: string; lastName: string } };
+type LookupOk = {
+  ok: true;
+  student: { id: string; firstName: string; lastName: string };
+};
 type LookupErr = { ok: false; error: string };
 
 const API = process.env.NEXT_PUBLIC_API_BASE!;
@@ -21,7 +24,7 @@ export default function Home() {
 
   const fullName = useMemo(
     () => (student ? `${student.firstName} ${student.lastName}` : ""),
-    [student]
+    [student],
   );
   const router = useRouter();
 
@@ -56,7 +59,10 @@ export default function Home() {
       const res = await fetch(`${API}/api/attempt/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ joinCode: joinCode.trim().toUpperCase(), studentId: student.id }),
+        body: JSON.stringify({
+          joinCode: joinCode.trim().toUpperCase(),
+          studentId: student.id,
+        }),
       });
       const data = await res.json();
       router.push(`/play/${data.attemptId}`);
@@ -68,13 +74,27 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-zinc-950 to-zinc-900 text-zinc-50">
+    <main
+      className="min-h-screen flex items-center justify-center p-4 text-zinc-50"
+      style={{
+        background:
+          "linear-gradient(160deg, #0F0F23 0%, #14082e 55%, #0F0F23 100%)",
+      }}
+    >
       <div className="w-full max-w-md">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+        >
           <Card className="bg-zinc-950/60 border-zinc-800 backdrop-blur text-zinc-50">
             <CardHeader>
-              <CardTitle className="text-2xl tracking-tight text-zinc-50">MENTIS</CardTitle>
-              <p className="text-sm text-zinc-300">Kod ve okul numaran ile giriş yap.</p>
+              <CardTitle className="text-2xl tracking-tight text-zinc-50">
+                <span style={{ color: "#6B2BFF" }}>M</span>entis
+              </CardTitle>
+              <p className="text-sm text-zinc-400">
+                Kod ve okul numaran ile giriş yap.
+              </p>
             </CardHeader>
 
             <CardContent className="space-y-3">
@@ -92,7 +112,9 @@ export default function Home() {
                 <label className="text-sm text-zinc-300">Okul Numarası</label>
                 <Input
                   value={studentNo}
-                  onChange={(e) => setStudentNo(e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) =>
+                    setStudentNo(e.target.value.replace(/\D/g, ""))
+                  }
                   placeholder="Örn: 123"
                   className="bg-zinc-900/60 border-zinc-800 text-zinc-50 placeholder:text-zinc-500"
                 />
@@ -100,7 +122,11 @@ export default function Home() {
 
               <Button
                 onClick={lookup}
-                disabled={loading || joinCode.trim().length < 4 || studentNo.trim().length < 1}
+                disabled={
+                  loading ||
+                  joinCode.trim().length < 4 ||
+                  studentNo.trim().length < 1
+                }
                 className="w-full"
               >
                 {loading ? "Kontrol ediliyor..." : "Devam"}
@@ -129,10 +155,19 @@ export default function Home() {
                     <div className="text-lg font-semibold">{fullName}</div>
 
                     <div className="mt-3 flex gap-2">
-                      <Button variant="secondary" className="flex-1" onClick={() => setStudent(null)} disabled={loading}>
+                      <Button
+                        variant="secondary"
+                        className="flex-1"
+                        onClick={() => setStudent(null)}
+                        disabled={loading}
+                      >
                         Yanlış
                       </Button>
-                      <Button className="flex-1" onClick={confirm} disabled={loading}>
+                      <Button
+                        className="flex-1"
+                        onClick={confirm}
+                        disabled={loading}
+                      >
                         Ben buyum
                       </Button>
                     </div>
@@ -144,7 +179,8 @@ export default function Home() {
         </motion.div>
 
         <p className="mt-4 text-center text-xs text-zinc-400">
-          Kişisel veri minimizasyonu: giriş için sadece okul numarası kullanılır.
+          Kişisel veri minimizasyonu: giriş için sadece okul numarası
+          kullanılır.
         </p>
       </div>
     </main>

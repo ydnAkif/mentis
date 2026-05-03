@@ -1,163 +1,48 @@
-# 🧠 Mentis
+# Mentis
 
-**Mentis**, öğretmenlerin sınıf içi ölçme–değerlendirme süreçlerini **hızlı, sade ve güvenli** şekilde yürütebilmesi için geliştirilen,  
-**Kahoot benzeri fakat okul odaklı** bir web tabanlı quiz ve yarışma platformudur.
+Öğretmenler için sınıf içi quiz platformu. Kahoot benzeri, okul odaklı, KVKK uyumlu.
 
-> 🎯 Amaç:  
-> Minimum kişisel veri, maksimum performans, yüksek ölçeklenebilirlik.
+## Yapı
 
----
-
-## ✨ Temel Özellikler
-
-### 👩‍🎓 Öğrenci Tarafı
-
-- Atama kodu + okul numarası ile giriş
-- İsim-soyisim otomatik doğrulama (manuel giriş yok)
-- Quiz’e tek seferlik katılım (attempt-based)
-- Gerçek zamanlı soru akışı
-- Anında doğru / yanlış geri bildirimi
-- Sadece kendi sonucunu görme
-
-### 👨‍🏫 Öğretmen Tarafı (Planlanan)
-
-- Soru havuzu (kazanım bazlı)
-- Quiz oluşturma ve atama
-- Canlı yarışma / ödev modu
-- Detaylı raporlama
-- Anti-cheat mekanizmaları
-
----
-
-## 🔐 Gizlilik & Güvenlik
-
-Mentis, **KVKK / GDPR** uyumlu olacak şekilde tasarlanmıştır.
-
-- Öğrenciden yalnızca **okul numarası** alınır
-- İsim bilgisi backend’de doğrulanır
-- Email / telefon / kullanıcı adı yok
-- Attempt bazlı erişim (tekrar katılım engeli)
-- Kişisel veri minimizasyonu temel ilkedir
-
-Planlanan ek önlemler:
-
-- IP / User-Agent kontrolü
-- Tek sekme / tek cihaz kısıtı
-- Rate limiting
-
----
-
-## 🏗️ Mimari
-
-### Backend
-
-- Node.js + TypeScript
-- Fastify
-- Prisma ORM
-- PostgreSQL
-- WebSocket / Socket.IO (planlanan)
-
-### Frontend
-
-- Next.js (App Router)
-- TypeScript
-- Tailwind CSS
-- Premium dark UI yaklaşımı
-
-### Monorepo Yapısı
-
-```text
-mentis/
-├── apps/
-│   ├── api/            # Backend (Fastify + Prisma)
-│   ├── web-student/    # Öğrenci arayüzü (Next.js)
-│   └── web-teacher/    # Öğretmen arayüzü (planlanan)
-├── packages/           # Ortak paketler (ileride)
-├── docker/             # Docker & infra dosyaları
-├── pnpm-workspace.yaml
-├── package.json
-└── README.md
-
----
-
-## 🚦 Proje Durumu (Şubat 2026)
-
-### ✅ Tamamlananlar
-
-- Proje konsepti ve isimlendirme
-- Backend temel mimari
-- Prisma schema
-- Demo seed (öğretmen, sınıf, öğrenci, quiz)
-- Öğrenci giriş akışı
-- Attempt oluşturma
-- Soru ekranı
-- Doğru / yanlış geri bildirimi
-- Health check endpoint
-
-### 🟡 Devam Edenler
-
-- UI tema ve kontrast düzenlemeleri
-- Soru state yönetimi
-- Soru ilerleme akışı
-
----
-
-## 🗺️ Yol Haritası
-
-### Phase 1 – MVP
-
-- [x] Student join flow
-- [x] Attempt bazlı quiz
-- [ ] Soru timer
-- [ ] Seçim kilidi
-- [ ] UI animasyonları
-- [ ] Tema standardizasyonu
-
-### Phase 2 – Canlı Yarışma
-
-- [ ] WebSocket altyapısı
-- [ ] Gerçek zamanlı leaderboard
-- [ ] Öğretmen canlı kontrol paneli
-
-### Phase 3 – Öğretmen Paneli
-
-- [ ] Quiz builder
-- [ ] Soru bankası
-- [ ] Kazanım etiketleme
-- [ ] Raporlama ekranları
-
-### Phase 4 – Güvenlik & Ölçek
-
-- [ ] Anti-cheat mekanizmaları
-- [ ] Load test
-- [ ] Docker prod setup
-- [ ] Domain + HTTPS
-
----
-
-## 🤝 Katkı & Vizyon
-
-Mentis, öğretmen ihtiyaçlarından doğmuş, **açık kaynaklı** bir eğitim teknolojisi projesidir.
-
-Vizyon:
-
-- Öğretmen odaklı
-- Okul gerçeklerine uygun
-- Veri güvenliğini önceleyen
-- Ticarî baskılardan uzak
-
----
-
-## 👨‍💻 Geliştirici
-
-**Akif Aydın**
-Fen Bilimleri Öğretmeni & Geliştirici
-Türkiye 🇹🇷
-
----
-
-## 📜 Lisans
-
-Henüz belirlenmedi.
-(MIT veya Apache 2.0 değerlendirme aşamasında)
 ```
+apps/
+  api/          → Fastify + Prisma + PostgreSQL
+  web-student/  → Next.js (öğrenci arayüzü)
+packages/
+  shared/       → Ortak tipler (ileride)
+docker/
+  docker-compose.yml
+```
+
+## Kurulum
+
+```bash
+# Bağımlılıklar
+pnpm install
+
+# Veritabanı
+docker compose -f docker/docker-compose.yml up -d
+cd apps/api && npx prisma migrate deploy && pnpm seed
+```
+
+## Geliştirme
+
+```bash
+# API  (localhost:4000)
+cd apps/api && pnpm dev
+
+# Web  (localhost:3000)
+cd apps/web-student && pnpm dev
+```
+
+## Teknolojiler
+
+| Katman | Stack |
+|---|---|
+| Backend | Fastify · Prisma · PostgreSQL · Zod |
+| Frontend | Next.js 16 · React 19 · Tailwind CSS 4 · Framer Motion |
+| Infra | Docker · pnpm workspaces |
+
+---
+
+**Akif Aydın** — Fen Bilimleri Öğretmeni & Geliştirici
