@@ -61,7 +61,7 @@ async function main() {
   const teacher = await prisma.teacher.upsert({
     where: { email: "akif@local.dev" },
     update: {},
-    create: { email: "akif@local.dev" },
+    create: { email: "akif@local.dev", password: "password" },
   });
 
   // ── Class ────────────────────────────────────
